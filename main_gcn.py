@@ -7,9 +7,11 @@ from utilities_GNN import load_dgl_graphs_from_folder, mask_graph
 import torch
 from sklearn.metrics.pairwise import cosine_similarity
 import json
+from tqdm import tqdm
 
 # 读取数据集
 dataset_folder = 'Datasets/jsonGraph'
+print("Loading graphs...")
 train_graphs, train_file_names, feature_encoders = load_dgl_graphs_from_folder(dataset_folder, fit_encoders=True)
 
 # 分割训练集和测试集
@@ -21,7 +23,8 @@ test_file_names = train_file_names[train_split:]
 train_file_names = train_file_names[:train_split]
 
 # 生成不完整的测试集
-incomplete_test_graphs = [mask_graph(g, mask_ratio=0.2) for g in test_graphs]
+print("Masking test graphs...")
+incomplete_test_graphs = [mask_graph(g, mask_ratio=0.2) for g in tqdm(test_graphs, desc="Masking graphs")]
 
 # 训练 GCN 模型
 in_feats = len(train_graphs[0].ndata['feat'][0])  # 输入特征维度
@@ -46,7 +49,7 @@ def get_graph_embeddings(model, graphs):
     model.eval()
     embeddings = []
     with torch.no_grad():
-        for g in graphs:
+        for g in tqdm(graphs, desc="Computing embeddings"):
             g = g.to(device)
             logits = model(g, g.ndata['feat'])
             embedding = logits.mean(dim=0).cpu().numpy()
@@ -118,14 +121,8 @@ os.makedirs(results_folder)
 # 保存推荐结果
 with open(os.path.join(results_folder, 'recommendations.json'), 'w') as f:
     json.dump(recommendations, f, indent=4)
-#
-# # 保存推荐结果
-# recommendations_file = os.path.join(results_folder, 'recommendations.json')
-# with open(recommendations_file, 'w') as f:
-#     json.dump(recommendations, f, indent=4)
 
 # 保存命中率和 MRR
-# metrics_file = os.path.join(results_folder, 'metrics.json')
 metrics = {
     'Hit Rate': hit_rate,
     'MRR': mrr
@@ -133,8 +130,6 @@ metrics = {
 
 with open(os.path.join(results_folder, 'results.json'), 'w') as f:
     json.dump(metrics, f, indent=4)
-# with open(metrics_file, 'w') as f:
-#     json.dump(metrics, f, indent=4)
 
 print(f"Hit Rate: {hit_rate}")
 print(f"Mean Reciprocal Rank (MRR): {mrr}")

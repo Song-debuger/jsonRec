@@ -2,9 +2,8 @@ import os
 import json
 import dgl
 import torch
-import numpy as np
 from sklearn.preprocessing import LabelEncoder
-
+from tqdm import tqdm
 
 def json_to_dgl_graph(file_path, feature_encoders=None, fit_encoders=False):
     """
@@ -83,29 +82,47 @@ def mask_graph(graph, mask_ratio=0.2):
     G = graph.clone()
     num_nodes = G.num_nodes()
     num_mask = int(num_nodes * mask_ratio)
-    nodes_to_remove = torch.randperm(num_nodes)[:num_mask].tolist()
-    G.remove_nodes(nodes_to_remove)
-    return G
+    nodes_to_remove = set(torch.randperm(num_nodes)[:num_mask].tolist())
 
+    new_src, new_dst = [], []
+
+    src, dst = G.edges()
+    for s, d in zip(src.tolist(), dst.tolist()):
+        if s in nodes_to_remove or d in nodes_to_remove:
+            continue
+        new_src.append(s)
+        new_dst.append(d)
+
+    new_graph = dgl.graph((new_src, new_dst), num_nodes=num_nodes)
+    new_graph.ndata['feat'] = G.ndata['feat']
+    new_graph.remove_nodes(list(nodes_to_remove))
+
+    return new_graph
 
 def load_dgl_graphs_from_folder(folder_path, fit_encoders=False):
     """
-    从文件夹中加载所有 JSON 文件并转换为 DGL 图。
+    从文件夹中加载 DGL 图并处理节点特征。
 
     参数：
-    folder_path (str): 文件夹路径。
-    fit_encoders (bool): 是否拟合编码器。
+    folder_path (str): 包含 JSON 图文件的文件夹路径。
+    fit_encoders (bool): 是否拟合特征编码器。
 
     返回：
-    tuple: 包含图列表、文件名列表和特征编码器的元组。
+    tuple: 包含 DGL 图列表、文件名列表和特征编码器字典的元组。
     """
     graphs = []
     file_names = []
-    feature_encoders = None
-    for file_name in os.listdir(folder_path):
-        if file_name.endswith('.json'):
-            file_path = os.path.join(folder_path, file_name)
-            graph, feature_encoders = json_to_dgl_graph(file_path, feature_encoders, fit_encoders=fit_encoders)
+    feature_encoders = {}
+
+    json_files = [f for f in os.listdir(folder_path) if f.endswith('.json')]
+    for json_file in tqdm(json_files, desc="Loading graphs"):
+        file_path = os.path.join(folder_path, json_file)
+        try:
+            graph, feature_encoders = json_to_dgl_graph(file_path, feature_encoders, fit_encoders)
             graphs.append(graph)
-            file_names.append(file_name)
+            file_names.append(json_file)
+        except Exception as e:
+            print(f"Error processing file: {file_path}")
+            print(e)
+
     return graphs, file_names, feature_encoders
