@@ -1,2 +1,6 @@
 /Datasets/jsonGraph/
 /results/
+/results_GNN/
+/Datasets/test/
+/testMulti.py
+/Datasets/cache/

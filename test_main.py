@@ -6,7 +6,7 @@ import torch
 from sklearn.metrics.pairwise import cosine_similarity
 import json
 from tqdm import tqdm
-from gcn_model import train_gcn_model,GCN
+from gcn_model import train_gcn_model
 from utilities_GNN import (
     load_dgl_graphs_from_folder,
     mask_graph,
@@ -16,11 +16,10 @@ from utilities_GNN import (
 )
 
 # 设置路径和文件名
-dataset_folder = 'Datasets/jsonGraph'
-data_file = 'Datasets/cache/saved_data.pkl'
-normalized_data_file = 'Datasets/cache/saved_normalized_data.pkl'
-output_folder = 'results_GNN'
-# model_path = 'results_GNN/20240530_190733trained_gcn_model.pth'
+dataset_folder = 'Datasets/test'
+data_file = 'Datasets/cache/test_saved_data.pkl'
+normalized_data_file = 'Datasets/cache/test_saved_normalized_data.pkl'
+output_folder = 'results_GNN_test'
 
 def load_and_process_data(dataset_folder, data_file):
     if os.path.exists(data_file):
@@ -93,7 +92,7 @@ else:
 ground_truth = {file_name: [file_name] for file_name in train_file_names}
 
 # 生成不同 mask 程度的不完整图作为测试集
-mask_ratios = [0.3, 0.4, 0.5]
+mask_ratios = [0.1, 0.2, 0.3]
 incomplete_test_graphs = []
 incomplete_test_file_names = []
 
@@ -106,18 +105,8 @@ for graph, file_name in zip(train_graphs, train_file_names):
 # 训练 GCN 模型
 in_feats = len(train_graphs[0].ndata['feat'][0])
 h_feats = 16
-# out_feats = in_feats
-model = train_gcn_model(train_graphs, in_feats, h_feats, 1000)
-
-# # 创建模型实例
-# model = GCN(in_feats, h_feats)
-# # 加载模型权重
-# model.load_state_dict(torch.load(model_path))
-# # 将模型设置为评估模式
-# model.eval()
-# # 如果你有GPU并且想要使用
-# device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-# model.to(device)
+out_feats = in_feats
+model = train_gcn_model(train_graphs, in_feats, h_feats, 50)
 
 # 获取训练集和测试集的图表示
 train_embeddings = get_graph_embeddings(model, train_graphs)
@@ -152,4 +141,3 @@ torch.save(model.state_dict(), model_path)
 print(f"Hit Rate: {hit_rate}")
 print(f"Mean Reciprocal Rank (MRR): {mrr}")
 # print("Recommendations:", recommendations)
-print(f"Trained model saved to {model_path}")

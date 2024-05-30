@@ -2,12 +2,62 @@ import os
 import json
 import dgl
 import torch
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder,MinMaxScaler,StandardScaler
 from tqdm import tqdm
+import pickle
+
+def save_data(file_path, data):
+    """
+    保存数据到指定文件路径。如果目录不存在，创建目录。
+
+    参数：
+    file_path (str): 要保存数据的文件路径。
+    data (any): 要保存的数据。
+    """
+    directory = os.path.dirname(file_path)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    with open(file_path, 'wb') as f:
+        pickle.dump(data, f)
+
+def load_data(file_path):
+    """
+    从指定文件路径加载数据。
+
+    参数：
+    file_path (str): 要加载数据的文件路径。
+
+    返回：
+    any: 加载的数据。
+    """
+    with open(file_path, 'rb') as f:
+        return pickle.load(f)
+
+def normalize_features(features, method="minmax"):
+    """
+    归一化节点特征。
+
+    参数：
+    features (torch.Tensor): 节点特征张量。
+    method (str): 归一化方法，可以是 "minmax" 或 "standard"。
+
+    返回：
+    torch.Tensor: 归一化后的节点特征张量。
+    """
+    features = features.numpy()
+    if method == "minmax":
+        scaler = MinMaxScaler()
+    elif method == "standard":
+        scaler = StandardScaler()
+    else:
+        raise ValueError("Invalid normalization method")
+
+    features = scaler.fit_transform(features)
+    return torch.tensor(features)
 
 def json_to_dgl_graph(file_path, feature_encoders=None, fit_encoders=False):
     """
-    将 JSON 文件中的图数据转换为 DGL 图，并处理节点特征。
+    将 JSON 文件中的图数据转换为 DGL 图，并处理节点和边特征。
 
     参数：
     file_path (str): JSON 文件的路径。
@@ -19,13 +69,16 @@ def json_to_dgl_graph(file_path, feature_encoders=None, fit_encoders=False):
     """
     with open(file_path, 'r') as f:
         graph_data = json.load(f)
-    G = dgl.graph(([], []))  # 初始化空图
+
+    # 初始化空图
+    G = dgl.graph(([], []))
     node_features = []
     feature_keys = None
 
     if feature_encoders is None:
         feature_encoders = {}
 
+    # 处理节点
     for node in graph_data["nodes"]:
         G.add_nodes(1)  # 添加节点
         node_feature = []
@@ -50,7 +103,11 @@ def json_to_dgl_graph(file_path, feature_encoders=None, fit_encoders=False):
                     try:
                         encoded_value = feature_encoders[key].transform([value])[0]
                     except ValueError:
-                        encoded_value = -1  # 未见过的标签用 -1 处理
+                        if fit_encoders:
+                            feature_encoders[key].fit(feature_encoders[key].classes_.tolist() + [value])
+                            encoded_value = feature_encoders[key].transform([value])[0]
+                        else:
+                            encoded_value = -1  # 未见过的标签用 -1 处理
                     node_feature.append(encoded_value)
                 else:
                     node_feature.append(value if value is not None else 0)  # 将 None 替换为 0
@@ -59,12 +116,16 @@ def json_to_dgl_graph(file_path, feature_encoders=None, fit_encoders=False):
 
         node_features.append(node_feature)
 
+    # 处理边
     src, dst = [], []
     for edge in graph_data["links"]:
         src.append(edge["source"])
         dst.append(edge["target"])
     G.add_edges(src, dst)  # 添加边
-    G.ndata['feat'] = torch.tensor(node_features).float()  # 将节点特征转换为张量并添加到图中
+
+    # 将节点特征转换为张量并添加到图中
+    G.ndata['feat'] = torch.tensor(node_features).float()
+
     return G, feature_encoders
 
 
@@ -126,3 +187,18 @@ def load_dgl_graphs_from_folder(folder_path, fit_encoders=False):
             print(e)
 
     return graphs, file_names, feature_encoders
+
+def normalize_graph_features(graphs, method="minmax"):
+    """
+    对图的节点特征进行归一化。
+
+    参数：
+    graphs (list): 图列表。
+    method (str): 归一化方法，可以是 "minmax" 或 "standard"。
+
+    返回：
+    list: 归一化后的图列表。
+    """
+    for graph in graphs:
+        graph.ndata['feat'] = normalize_features(graph.ndata['feat'], method)
+    return graphs
